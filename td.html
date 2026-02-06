@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>塔防大作戰</title>
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 React 和 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 引入 Babel 用於解析 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: monospace;
+            user-select: none;
+        }
+        /* 自定義動畫，對應原本 Tailwind 配置中可能缺失的部分 */
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        @keyframes reverse-spin {
+            from { transform: rotate(360deg); }
+            to { transform: rotate(0deg); }
+        }
+        .animate-spin-slow {
+            animation: spin-slow 8s linear infinite;
+        }
+        .animate-reverse-spin {
+            animation: reverse-spin 6s linear infinite;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- SVG 圖標組件 (手動定義以移除外部依賴) ---
+        const IconBase = ({ children, size = 24, className = "", fill = "none", stroke = "currentColor", ...props }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+                {children}
+            </svg>
+        );
+
+        const Play = (props) => <IconBase {...props}><polygon points="5 3 19 12 5 21 5 3" /></IconBase>;
+        const Shield = (props) => <IconBase {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></IconBase>;
+        const Home = (props) => <IconBase {...props}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></IconBase>;
+        const Save = (props) => <IconBase {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></IconBase>;
+        const X = (props) => <IconBase {...props}><path d="M18 6 6 18"/><path d="m6 6 18 18"/></IconBase>;
+        const LogOut = (props) => <IconBase {...props}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></IconBase>;
+        const ArrowRight = (props) => <IconBase {...props}><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></IconBase>;
+        const CornerDownLeft = (props) => <IconBase {...props}><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></IconBase>;
+        const Copy = (props) => <IconBase {...props}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></IconBase>;
+        const Download = (props) => <IconBase {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></IconBase>;
+        const FileText = (props) => <IconBase {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></IconBase>;
+        const FileUp = (props) => <IconBase {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 12v6"/><path d="m15 15-3-3-3 3"/></IconBase>;
+        const Check = (props) => <IconBase {...props}><polyline points="20 6 9 17 4 12"/></IconBase>;
+        const ChevronRight = (props) => <IconBase {...props}><path d="m9 18 6-6-6-6"/></IconBase>;
+        const ChevronsUp = (props) => <IconBase {...props}><path d="m17 11-5-5-5 5"/><path d="m17 18-5-5-5 5"/></IconBase>;
+        const Trash2 = (props) => <IconBase {...props}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></IconBase>;
+        const Users = (props) => <IconBase {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></IconBase>;
+        const Crosshair = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></IconBase>;
+        const AlertTriangle = (props) => <IconBase {...props}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></IconBase>;
+
+        // --- 遊戲常數配置 (改為 9:16 直式 720x1280) ---
+        const GAME_CONFIG = {
+          fps: 60,
+          designWidth: 720,
+          designHeight: 1280,
+          startMoney: 650, 
+          startLives: 20,
+          basePathColor: '#334155', 
+          pathWidth: 80, 
+          enemySpawnInterval: 800, 
+        };
+
+        // --- 圖片資源 ---
+        const imgCache = {};
+        const getImg = (url) => {
+          if (!imgCache[url]) {
+            const img = new Image();
+            img.src = url;
+            imgCache[url] = img;
+          }
+          return imgCache[url];
+        };
+
+        // --- 單位數據 (中文化) ---
+        const UNIT_TYPES = {
+          RIFLE: {
+            id: 'rifle',
+            name: '拉毗',
+            spriteUrl: 'https://api.dicebear.com/9.x/personas/svg?seed=Rapi&backgroundColor=b6e3f4',
+            color: '#ef4444',
+            range: 220, 
+            damage: 15,
+            fireRate: 20, 
+            cost: 100,
+            projectileSpeed: 12,
+            desc: '突擊步槍'
+          },
+          SHOTGUN: {
+            id: 'shotgun',
+            name: '阿尼斯',
+            spriteUrl: 'https://api.dicebear.com/9.x/personas/svg?seed=Anis&backgroundColor=ffd5dc',
+            color: '#f59e0b',
+            range: 180, 
+            damage: 40,
+            fireRate: 60, 
+            cost: 150,
+            projectileSpeed: 15,
+            desc: '散彈擴散',
+            effect: { type: 'splash' }
+          },
+          SNIPER: {
+            id: 'sniper',
+            name: '愛麗絲',
+            spriteUrl: 'https://api.dicebear.com/9.x/personas/svg?seed=Alice&backgroundColor=ffdfbf',
+            color: '#a855f7',
+            range: 450, 
+            damage: 150,
+            fireRate: 110, 
+            cost: 300,
+            projectileSpeed: 30,
+            desc: '狙擊槍'
+          },
+          NOISE: {
+            id: 'noise',
+            name: '諾伊斯',
+            spriteUrl: 'https://api.dicebear.com/9.x/personas/svg?seed=Noise&backgroundColor=c084fc',
+            color: '#818cf8',
+            range: 240, 
+            damage: 10,
+            fireRate: 30,
+            cost: 250,
+            projectileSpeed: 15,
+            desc: '緩速干擾',
+            effect: { type: 'slow' } 
+          },
+          PRIVATY: {
+            id: 'privaty',
+            name: '普麗瓦蒂',
+            spriteUrl: 'https://api.dicebear.com/9.x/personas/svg?seed=Privaty&backgroundColor=93c5fd',
+            color: '#3b82f6',
+            range: 220, 
+            damage: 25,
+            fireRate: 80,
+            cost: 400,
+            projectileSpeed: 18,
+            desc: '彈射凍結',
+            effect: { type: 'chain_freeze' }
+          },
+          LAPLACE: {
+            id: 'laplace',
+            name: '拉普拉斯',
+            spriteUrl: 'https://api.dicebear.com/9.x/personas/svg?seed=Laplace&backgroundColor=fca5a5',
+            color: '#dc2626',
+            range: 260, 
+            damage: 60,
+            fireRate: 120, 
+            cost: 500,
+            projectileSpeed: 20,
+            desc: '強力擊退',
+            effect: { type: 'knockback' } 
+          }
+        };
+
+        // --- 敵人類型 ---
+        const ENEMY_TYPES = {
+          BASIC: {
+            baseHp: 60, speed: 1.5, reward: 15, 
+            spriteUrl: 'https://api.dicebear.com/9.x/bottts/svg?seed=RaptureGrunt',
+            scale: 1.0
+          },
+          FAST: {
+            baseHp: 35, speed: 3.0, reward: 20,
+            spriteUrl: 'https://api.dicebear.com/9.x/bottts/svg?seed=RaptureScout&baseColor=f44336',
+            scale: 0.8
+          },
+          TANK: {
+            baseHp: 300, speed: 1.0, reward: 50,
+            spriteUrl: 'https://api.dicebear.com/9.x/bottts/svg?seed=RaptureTank&baseColor=3f51b5',
+            scale: 1.4
+          }
+        };
+
+        const getDistance = (e1, e2) => Math.hypot(e1.x - e2.x, e1.y - e2.y);
+
+        const getAPS = (fireRate) => {
+          const currentInterval = fireRate; 
+          return (60 / currentInterval).toFixed(1);
+        };
+
+        function TowerDefenseGame() {
+          const [viewport, setViewport] = useState({ width: 720, height: 1280, scale: 1 });
+          
+          const [gameState, setGameState] = useState('menu');
+          const [money, setMoney] = useState(GAME_CONFIG.startMoney);
+          const [lives, setLives] = useState(GAME_CONFIG.startLives);
+          const [wave, setWave] = useState(1);
+          
+          const [activeSpot, setActiveSpot] = useState(null); 
+          const [selectedUnitType, setSelectedUnitType] = useState(null);
+          const [selectedTowerInstance, setSelectedTowerInstance] = useState(null);
+          const [pendingBuild, setPendingBuild] = useState(null);
+          const [showHomeConfirm, setShowHomeConfirm] = useState(false);
+          const [showSaveLoadModal, setShowSaveLoadModal] = useState(false);
+          const [saveString, setSaveString] = useState('');
+
+          const [currentWaveConfig, setCurrentWaveConfig] = useState(null);
+          const fileInputRef = useRef(null);
+
+          const canvasRef = useRef(null);
+          const requestRef = useRef();
+          const gameData = useRef({
+            frames: 0,
+            enemies: [],
+            towers: [],
+            projectiles: [],
+            particles: [],
+            mapPoints: [],
+            buildSpots: [],
+            waveActive: false,
+            enemiesSpawnedInWave: 0,
+            lastSpawnTime: 0,
+            enemiesRemainingToKill: 0
+          });
+
+          const generateWaveConfig = (waveNum) => {
+            const difficultyMultiplier = Math.pow(1.15, waveNum - 1);
+            const baseCount = 6;
+            let count = Math.floor(baseCount + waveNum * 1.5);
+
+            let enemyType = ENEMY_TYPES.BASIC;
+            
+            if (waveNum % 5 === 0) {
+                enemyType = ENEMY_TYPES.TANK;
+                count = Math.max(1, Math.floor(count * 0.4));
+            } else if (waveNum % 3 === 0) {
+                enemyType = ENEMY_TYPES.FAST;
+            }
+
+            return {
+                count: count,
+                hp: Math.floor(enemyType.baseHp * difficultyMultiplier),
+                maxHp: Math.floor(enemyType.baseHp * difficultyMultiplier),
+                speed: enemyType.speed * (1 + waveNum * 0.02),
+                reward: enemyType.reward,
+                spriteUrl: enemyType.spriteUrl,
+                scale: enemyType.scale
+            };
+          };
+
+          useEffect(() => {
+            setCurrentWaveConfig(generateWaveConfig(wave));
+          }, [wave]);
+
+          useEffect(() => {
+            const handleResize = () => {
+              const windowW = window.innerWidth;
+              const windowH = window.innerHeight;
+              const targetRatio = GAME_CONFIG.designWidth / GAME_CONFIG.designHeight;
+              const windowRatio = windowW / windowH;
+
+              let finalW, finalH, scale;
+              if (windowRatio > targetRatio) {
+                finalH = windowH;
+                finalW = finalH * targetRatio;
+                scale = finalH / GAME_CONFIG.designHeight;
+              } else {
+                finalW = windowW;
+                finalH = finalW / targetRatio;
+                scale = finalW / GAME_CONFIG.designWidth;
+              }
+              setViewport({ width: finalW, height: finalH, scale: scale });
+            };
+            window.addEventListener('resize', handleResize);
+            handleResize(); 
+            return () => window.removeEventListener('resize', handleResize);
+          }, []);
+
+          useEffect(() => {
+            Object.values(UNIT_TYPES).forEach(u => getImg(u.spriteUrl));
+            Object.values(ENEMY_TYPES).forEach(e => getImg(e.spriteUrl));
+          }, []);
+
+          // --- 地圖與建造點設定 ---
+          const initMap = () => {
+            const path = [
+                { x: -50, y: 200 }, 
+                { x: 580, y: 200 },
+                { x: 580, y: 500 },
+                { x: 140, y: 500 },
+                { x: 140, y: 800 },
+                { x: 580, y: 800 },
+                { x: 580, y: 1100 },
+                { x: -50, y: 1100 }
+            ];
+            
+            const spots = [
+                { x: 240, y: 1175, occupied: false }, 
+                { x: 480, y: 1175, occupied: false }, 
+                { x: 55, y: 580, occupied: false }, 
+                { x: 55, y: 720, occupied: false },
+                { x: 665, y: 880, occupied: false }, 
+                { x: 665, y: 1020, occupied: false },
+                { x: 665, y: 290, occupied: false }, 
+                { x: 665, y: 430, occupied: false }, 
+                { x: 260, y: 125, occupied: false }, 
+                { x: 460, y: 125, occupied: false }, 
+                { x: 240, y: 290, occupied: false }, 
+                { x: 480, y: 290, occupied: false }, 
+                { x: 360, y: 350, occupied: false }, 
+                { x: 240, y: 430, occupied: false }, 
+                { x: 480, y: 430, occupied: false }, 
+                { x: 230, y: 580, occupied: false }, 
+                { x: 490, y: 580, occupied: false }, 
+                { x: 360, y: 650, occupied: false }, 
+                { x: 230, y: 720, occupied: false }, 
+                { x: 490, y: 720, occupied: false }, 
+                { x: 230, y: 890, occupied: false }, 
+                { x: 490, y: 890, occupied: false }, 
+                { x: 360, y: 960, occupied: false }, 
+                { x: 230, y: 1025, occupied: false }, 
+                { x: 490, y: 1025, occupied: false }  
+            ];
+
+            gameData.current.mapPoints = path;
+            gameData.current.buildSpots = spots;
+          };
+
+          const updateGame = useCallback(() => {
+            if (showHomeConfirm || showSaveLoadModal) return;
+
+            const data = gameData.current;
+            data.frames++;
+
+            // 敵人生成
+            if (data.waveActive && currentWaveConfig && data.enemiesSpawnedInWave < currentWaveConfig.count) {
+              if (Date.now() - data.lastSpawnTime > GAME_CONFIG.enemySpawnInterval) {
+                const laneOffset = (Math.random() - 0.5) * 40; 
+                const speedVar = 0.9 + Math.random() * 0.2;
+
+                data.enemies.push({
+                  x: data.mapPoints[0].x, 
+                  y: data.mapPoints[0].y,
+                  wpIndex: 0,
+                  hp: currentWaveConfig.hp,
+                  maxHp: currentWaveConfig.maxHp,
+                  baseSpeed: currentWaveConfig.speed * speedVar,
+                  speed: currentWaveConfig.speed * speedVar,
+                  reward: currentWaveConfig.reward,
+                  spriteUrl: currentWaveConfig.spriteUrl,
+                  scale: currentWaveConfig.scale || 1,
+                  radius: 20 * (currentWaveConfig.scale || 1),
+                  flip: false,
+                  laneOffset: laneOffset,
+                  status: { freeze: 0, slow: 0, slowFactor: 1.0 } 
+                });
+                
+                if (data.mapPoints[1]) {
+                     const angle = Math.atan2(data.mapPoints[1].y - data.mapPoints[0].y, data.mapPoints[1].x - data.mapPoints[0].x);
+                     const startEnemy = data.enemies[data.enemies.length-1];
+                     startEnemy.x += Math.cos(angle + Math.PI/2) * laneOffset;
+                     startEnemy.y += Math.sin(angle + Math.PI/2) * laneOffset;
+                }
+
+                data.enemiesSpawnedInWave++;
+                data.lastSpawnTime = Date.now();
+              }
+            }
+
+            // 敵人移動
+            for (let i = data.enemies.length - 1; i >= 0; i--) {
+              const enemy = data.enemies[i];
+              const targetWp = data.mapPoints[enemy.wpIndex + 1];
+              
+              if (!targetWp) {
+                setLives(prev => {
+                  const newLives = prev - 1;
+                  if (newLives <= 0) setGameState('lost'); 
+                  return newLives;
+                });
+                data.enemiesRemainingToKill--;
+                data.enemies.splice(i, 1);
+                continue;
+              }
+
+              // 狀態效果更新
+              let moveSpeed = enemy.baseSpeed;
+              if (enemy.status.freeze > 0) {
+                  enemy.status.freeze--;
+                  moveSpeed = 0;
+              } 
+              else if (enemy.status.slow > 0) {
+                  enemy.status.slow--;
+                  moveSpeed *= (enemy.status.slowFactor || 0.5);
+              } else {
+                  enemy.status.slowFactor = 1.0;
+              }
+              
+              enemy.speed = moveSpeed;
+
+              if (moveSpeed > 0) {
+                  const currentWp = data.mapPoints[enemy.wpIndex];
+                  const pathAngle = Math.atan2(targetWp.y - currentWp.y, targetWp.x - currentWp.x);
+                  const offsetX = Math.cos(pathAngle + Math.PI/2) * enemy.laneOffset;
+                  const offsetY = Math.sin(pathAngle + Math.PI/2) * enemy.laneOffset;
+                  
+                  const actualTargetX = targetWp.x + offsetX;
+                  const actualTargetY = targetWp.y + offsetY;
+
+                  const dx = actualTargetX - enemy.x;
+                  const dy = actualTargetY - enemy.y;
+                  const dist = Math.hypot(dx, dy);
+                  
+                  if (dx < 0) enemy.flip = true;
+                  if (dx > 0) enemy.flip = false;
+                  
+                  if (dist < moveSpeed) {
+                    enemy.x = actualTargetX;
+                    enemy.y = actualTargetY;
+                    enemy.wpIndex++;
+                  } else {
+                    enemy.x += (dx / dist) * moveSpeed;
+                    enemy.y += (dy / dist) * moveSpeed;
+                  }
+              }
+            }
+
+            // 塔邏輯
+            data.towers.forEach(tower => {
+              if (tower.cooldown > 0) tower.cooldown--;
+              if (tower.cooldown <= 0) {
+                let target = null;
+                let minDist = Infinity;
+                
+                data.enemies.forEach(enemy => {
+                  const dist = getDistance(tower, enemy);
+                  if (dist <= tower.range && dist < minDist) {
+                    minDist = dist;
+                    target = enemy;
+                  }
+                });
+
+                if (target) {
+                  data.projectiles.push({
+                    x: tower.x, 
+                    y: tower.y, 
+                    target: target,
+                    speed: tower.stats.projectileSpeed, 
+                    damage: tower.damage, 
+                    color: tower.stats.color,
+                    effect: tower.stats.effect,
+                    towerLevel: tower.level 
+                  });
+                  tower.cooldown = Math.floor(tower.fireRate);
+                }
+              }
+            });
+
+            // 擊退輔助函式
+            const applyKnockback = (enemy, pushDist) => {
+                const currentWp = data.mapPoints[enemy.wpIndex];
+                const dx = currentWp.x - enemy.x;
+                const dy = currentWp.y - enemy.y;
+                const len = Math.hypot(dx, dy);
+                
+                if (len > 0) {
+                    const actualPush = Math.min(len, pushDist); 
+                    enemy.x += (dx / len) * actualPush;
+                    enemy.y += (dy / len) * actualPush;
+                }
+            };
+
+            // 子彈邏輯
+            for (let i = data.projectiles.length - 1; i >= 0; i--) {
+              const proj = data.projectiles[i];
+              if (!data.enemies.includes(proj.target)) {
+                data.projectiles.splice(i, 1);
+                continue;
+              }
+              const dist = getDistance(proj, proj.target);
+              
+              if (dist < proj.speed) {
+                // 命中邏輯
+                proj.target.hp -= proj.damage;
+                
+                // 額外效果處理
+                const level = proj.towerLevel || 1;
+
+                if (proj.effect) {
+                    if (proj.effect.type === 'slow') {
+                        const slowFactor = Math.max(0.1, 0.5 - (level - 1) * 0.05);
+                        const duration = 90 + (level - 1) * 30;
+                        proj.target.status.slow = duration;
+                        proj.target.status.slowFactor = slowFactor;
+                    } 
+                    else if (proj.effect.type === 'splash') {
+                        // 阿尼斯：範圍傷害
+                        const radius = 80; // 固定爆炸範圍
+                        data.enemies.forEach(e => {
+                            if (e !== proj.target && getDistance(e, proj.target) <= radius) {
+                                e.hp -= proj.damage * 0.8; // 濺射傷害為 80%
+                                // 濺射視覺
+                                data.particles.push({
+                                    x: e.x, y: e.y,
+                                    vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4,
+                                    life: 10, color: '#f59e0b'
+                                });
+                            }
+                        });
+                        // 爆炸特效
+                        for(let k=0; k<6; k++) {
+                            const angle = (Math.PI * 2 * k) / 6;
+                            data.particles.push({
+                                x: proj.target.x + Math.cos(angle)*radius*0.5, 
+                                y: proj.target.y + Math.sin(angle)*radius*0.5,
+                                vx: Math.cos(angle)*3, vy: Math.sin(angle)*3,
+                                life: 12, color: '#f59e0b'
+                            });
+                        }
+                    }
+                    else if (proj.effect.type === 'chain_freeze') {
+                        // 普麗瓦蒂：連鎖凍結
+                        const bounceCount = 3 + (level - 1); // 初始3次，每級+1
+                        const bounceRange = 180;
+                        const freezeDuration = 60 + (level - 1) * 15;
+
+                        // 凍結主目標
+                        proj.target.status.freeze = freezeDuration;
+
+                        // 彈射邏輯
+                        let currentTarget = proj.target;
+                        const visited = new Set([proj.target]);
+
+                        for (let b = 0; b < bounceCount; b++) {
+                            let nearest = null;
+                            let minD = bounceRange;
+
+                            // 尋找最近的未訪問鄰居
+                            data.enemies.forEach(e => {
+                                if (!visited.has(e)) {
+                                    const d = getDistance(currentTarget, e);
+                                    if (d < minD) {
+                                        minD = d;
+                                        nearest = e;
+                                    }
+                                }
+                            });
+
+                            if (nearest) {
+                                nearest.status.freeze = freezeDuration;
+                                visited.add(nearest);
+                                
+                                // 繪製彈射線條 (用粒子模擬)
+                                const steps = 10;
+                                const dx = (nearest.x - currentTarget.x) / steps;
+                                const dy = (nearest.y - currentTarget.y) / steps;
+                                for(let s=0; s<steps; s++) {
+                                     data.particles.push({
+                                        x: currentTarget.x + dx*s, y: currentTarget.y + dy*s,
+                                        vx: 0, vy: 0,
+                                        life: 15, color: '#3b82f6'
+                                    });
+                                }
+
+                                currentTarget = nearest;
+                            } else {
+                                break; // 沒人可彈，結束
+                            }
+                        }
+                    } 
+                    else if (proj.effect.type === 'knockback') {
+                        const radius = 100 + (level - 1) * 20;
+                        const pushDist = 40 + (level - 1) * 15;
+                        applyKnockback(proj.target, pushDist);
+                        data.enemies.forEach(e => {
+                             if (getDistance(e, proj.target) <= radius) {
+                                 applyKnockback(e, pushDist);
+                             }
+                        });
+                        for(let k=0; k<8; k++) {
+                            const angle = (Math.PI * 2 * k) / 8;
+                            data.particles.push({
+                                x: proj.target.x, 
+                                y: proj.target.y,
+                                vx: Math.cos(angle)*5, vy: Math.sin(angle)*5,
+                                life: 10, color: '#dc2626'
+                            });
+                        }
+                    }
+                }
+
+                // 擊中粒子
+                for(let p=0; p<3; p++) {
+                  data.particles.push({
+                    x: proj.target.x, y: proj.target.y,
+                    vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8,
+                    life: 20, color: '#fff'
+                  });
+                }
+                
+                // 擊殺判定
+                if (proj.target.hp <= 0) {
+                  const enemyIndex = data.enemies.indexOf(proj.target);
+                  if (enemyIndex > -1) {
+                    setMoney(prev => prev + proj.target.reward);
+                    data.enemies.splice(enemyIndex, 1);
+                    data.enemiesRemainingToKill--;
+                  }
+                }
+                data.projectiles.splice(i, 1);
+              } else {
+                const angle = Math.atan2(proj.target.y - proj.y, proj.target.x - proj.x);
+                proj.x += Math.cos(angle) * proj.speed;
+                proj.y += Math.sin(angle) * proj.speed;
+              }
+            }
+
+            // 粒子
+            for (let i = data.particles.length - 1; i >= 0; i--) {
+              const p = data.particles[i];
+              p.x += p.vx; p.y += p.vy; p.life--;
+              if (p.life <= 0) data.particles.splice(i, 1);
+            }
+
+            // --- 波次結束檢查 ---
+            if (data.waveActive && currentWaveConfig && data.enemiesSpawnedInWave >= currentWaveConfig.count && data.enemies.length === 0) {
+              data.waveActive = false;
+              setWave(w => w + 1);
+            }
+          }, [wave, currentWaveConfig, showHomeConfirm, showSaveLoadModal]);
+
+          const drawArrow = (ctx, fromX, fromY, toX, toY, color) => {
+            const headlen = 20; 
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const angle = Math.atan2(dy, dx);
+            
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.fill();
+          };
+
+          const drawTower = (ctx, tower, highlight = false) => {
+              if (highlight) {
+                ctx.beginPath();
+                ctx.arc(tower.x, tower.y, tower.range, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'; 
+                ctx.fill();
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
+
+              const img = getImg(tower.stats.spriteUrl);
+              const size = 60;
+              if (img && img.complete) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(tower.x, tower.y, size/2, 0, Math.PI * 2); 
+                ctx.clip();
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(tower.x-size/2, tower.y-size/2, size, size);
+                ctx.drawImage(img, tower.x - size/2, tower.y - size/2, size, size);
+                ctx.restore();
+                
+                ctx.fillStyle = '#fbbf24';
+                ctx.beginPath();
+                ctx.arc(tower.x + 20, tower.y + 20, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(tower.level, tower.x + 20, tower.y + 20);
+              }
+          };
+
+          const drawGame = useCallback((ctx) => {
+            const data = gameData.current;
+            
+            // 背景
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, GAME_CONFIG.designWidth, GAME_CONFIG.designHeight);
+            
+            // 網格
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < GAME_CONFIG.designWidth; i += 60) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, GAME_CONFIG.designHeight); ctx.stroke(); }
+            for (let i = 0; i < GAME_CONFIG.designHeight; i += 60) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(GAME_CONFIG.designWidth, i); ctx.stroke(); }
+
+            // 路徑 (底層)
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = GAME_CONFIG.pathWidth + 12;
+            if (data.mapPoints.length > 0) {
+              ctx.moveTo(data.mapPoints[0].x, data.mapPoints[0].y);
+              for (let i = 1; i < data.mapPoints.length; i++) ctx.lineTo(data.mapPoints[i].x, data.mapPoints[i].y);
+            }
+            ctx.stroke();
+
+            // 路徑 (內層)
+            ctx.beginPath();
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = GAME_CONFIG.pathWidth;
+            if (data.mapPoints.length > 0) {
+              ctx.moveTo(data.mapPoints[0].x, data.mapPoints[0].y);
+              for (let i = 1; i < data.mapPoints.length; i++) ctx.lineTo(data.mapPoints[i].x, data.mapPoints[i].y);
+            }
+            ctx.stroke();
+
+            // 流光
+            ctx.beginPath();
+            ctx.strokeStyle = '#3b82f6aa';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([20, 40]);
+            ctx.lineDashOffset = -data.frames * 2;
+            if (data.mapPoints.length > 0) {
+              ctx.moveTo(data.mapPoints[0].x, data.mapPoints[0].y);
+              for (let i = 1; i < data.mapPoints.length; i++) ctx.lineTo(data.mapPoints[i].x, data.mapPoints[i].y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // --- 起點與終點標示 ---
+            if (data.mapPoints.length > 1) {
+                const p0 = data.mapPoints[0];
+                const p1 = data.mapPoints[1];
+                const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+                const startX = p0.x + Math.cos(angle) * 80; 
+                const startY = p0.y + Math.sin(angle) * 80;
+                const endX = startX + Math.cos(angle) * 60;
+                const endY = startY + Math.sin(angle) * 60;
+                drawArrow(ctx, startX, startY, endX, endY, '#22c55e');
+
+                const pLast = data.mapPoints[data.mapPoints.length - 1];
+                ctx.fillStyle = '#ef444444';
+                ctx.beginPath();
+                ctx.arc(pLast.x, pLast.y, 45, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(pLast.x - 15, pLast.y - 15);
+                ctx.lineTo(pLast.x + 15, pLast.y + 15);
+                ctx.moveTo(pLast.x + 15, pLast.y - 15);
+                ctx.lineTo(pLast.x - 15, pLast.y + 15);
+                ctx.stroke();
+            }
+
+            // 建造點
+            data.buildSpots.forEach(spot => {
+              ctx.fillStyle = '#334155';
+              ctx.beginPath();
+              ctx.arc(spot.x, spot.y, 25, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.strokeStyle = (selectedUnitType || selectedTowerInstance) ? '#fbbf24' : '#475569';
+              ctx.lineWidth = (selectedUnitType && !spot.occupied) ? 3 : 1;
+              
+              ctx.beginPath();
+              ctx.arc(spot.x, spot.y, 25, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+
+              if (!spot.occupied && selectedUnitType) {
+                ctx.fillStyle = '#fbbf2433';
+                ctx.fill();
+              }
+            });
+
+            // 塔 & 敵人
+            data.towers.forEach(tower => drawTower(ctx, tower, selectedTowerInstance === tower));
+            data.enemies.forEach(enemy => {
+              const img = getImg(enemy.spriteUrl);
+              const size = 48 * enemy.scale;
+              ctx.save();
+              if (enemy.flip) {
+                  ctx.translate(enemy.x, enemy.y);
+                  ctx.scale(-1, 1);
+                  ctx.translate(-enemy.x, -enemy.y);
+              }
+              if (enemy.status.freeze > 0) {
+                  ctx.shadowColor = '#00ffff';
+                  ctx.shadowBlur = 20;
+              } else if (enemy.status.slow > 0) {
+                  ctx.shadowColor = '#5555ff';
+                  ctx.shadowBlur = 10;
+              } else {
+                  ctx.shadowBlur = 0;
+              }
+              if (img && img.complete) {
+                ctx.drawImage(img, enemy.x - size/2, enemy.y - size/2, size, size);
+              } else {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(enemy.x - 15, enemy.y - 15, 30, 30);
+              }
+              ctx.shadowBlur = 0; 
+              ctx.restore();
+              
+              // HP Bar
+              const hpPct = Math.max(0, enemy.hp / enemy.maxHp);
+              ctx.fillStyle = '#000';
+              ctx.fillRect(enemy.x - 16, enemy.y - size/2 - 8, 32, 5);
+              ctx.fillStyle = hpPct > 0.5 ? '#22c55e' : '#ef4444';
+              ctx.fillRect(enemy.x - 16, enemy.y - size/2 - 8, 32 * hpPct, 5);
+            });
+
+            // 投射物 & 粒子
+            data.projectiles.forEach(proj => {
+              ctx.fillStyle = proj.color;
+              ctx.beginPath(); ctx.arc(proj.x, proj.y, 6, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(proj.x, proj.y, 3, 0, Math.PI * 2); ctx.fill();
+            });
+            data.particles.forEach(p => {
+              ctx.fillStyle = p.color; ctx.globalAlpha = p.life / 20;
+              ctx.fillRect(p.x, p.y, 4, 4); ctx.globalAlpha = 1.0;
+            });
+
+            // Focus Mode
+            if (pendingBuild) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; 
+                ctx.beginPath();
+                ctx.rect(0, 0, GAME_CONFIG.designWidth, GAME_CONFIG.designHeight);
+                ctx.arc(pendingBuild.spot.x, pendingBuild.spot.y, pendingBuild.unitType.range, 0, Math.PI * 2, true);
+                ctx.fill();
+                ctx.restore();
+                ctx.beginPath();
+                ctx.arc(pendingBuild.spot.x, pendingBuild.spot.y, pendingBuild.unitType.range, 0, Math.PI * 2);
+                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]); ctx.stroke(); ctx.setLineDash([]);
+                const img = getImg(pendingBuild.unitType.spriteUrl);
+                const size = 60;
+                ctx.save(); ctx.globalAlpha = 0.8;
+                if (img && img.complete) {
+                    ctx.beginPath(); ctx.arc(pendingBuild.spot.x, pendingBuild.spot.y, size/2, 0, Math.PI * 2); ctx.clip();
+                    ctx.drawImage(img, pendingBuild.spot.x - size/2, pendingBuild.spot.y - size/2, size, size);
+                }
+                ctx.restore();
+            } 
+            else if (selectedTowerInstance) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; 
+                ctx.fillRect(0, 0, GAME_CONFIG.designWidth, GAME_CONFIG.designHeight);
+                drawTower(ctx, selectedTowerInstance, true);
+            }
+
+            // --- 最高層級：選中點位的強化呼吸光圈 ---
+            if (activeSpot) {
+              ctx.setLineDash([]);
+              const pulse = Math.sin(data.frames * 0.15) * 5; 
+              
+              ctx.save();
+              // 1. 外層青色發光呼吸圈
+              ctx.strokeStyle = '#06b6d4'; 
+              ctx.lineWidth = 5;
+              ctx.shadowBlur = 20 + pulse;
+              ctx.shadowColor = '#06b6d4';
+              ctx.beginPath();
+              ctx.arc(activeSpot.x, activeSpot.y, 36 + pulse/2, 0, Math.PI * 2);
+              ctx.stroke();
+              
+              // 2. 內層亮白實線圈
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = '#ffffff';
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.arc(activeSpot.x, activeSpot.y, 30 + pulse/2, 0, Math.PI * 2);
+              ctx.stroke();
+              
+              ctx.restore();
+            }
+
+          }, [selectedTowerInstance, selectedUnitType, pendingBuild, activeSpot]); 
+
+          useEffect(() => {
+            if (gameState !== 'playing') return;
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext('2d');
+            initMap();
+            const loop = () => {
+              updateGame();
+              drawGame(ctx);
+              requestRef.current = requestAnimationFrame(loop);
+            };
+            requestRef.current = requestAnimationFrame(loop);
+            return () => cancelAnimationFrame(requestRef.current);
+          }, [gameState, updateGame, drawGame]);
+
+          const handleCanvasClick = (e) => {
+            if (gameState !== 'playing') return;
+            if (showHomeConfirm || showSaveLoadModal) return; 
+            const rect = canvasRef.current.getBoundingClientRect();
+            const clientX = e.clientX - rect.left;
+            const clientY = e.clientY - rect.top;
+            const x = clientX / viewport.scale;
+            const y = clientY / viewport.scale;
+            const data = gameData.current;
+
+            if (pendingBuild) {
+                let nearestSpot = null;
+                let minSpotDist = 45;
+                for (let spot of data.buildSpots) {
+                    const d = Math.hypot(spot.x - x, spot.y - y);
+                    if (!spot.occupied && d < minSpotDist) {
+                        nearestSpot = spot; minSpotDist = d;
+                    }
+                }
+                if (nearestSpot) {
+                    setPendingBuild({ spot: nearestSpot, unitType: selectedUnitType });
+                    setActiveSpot(nearestSpot);
+                } else {
+                    setPendingBuild(null); setActiveSpot(null);
+                }
+                return; 
+            }
+
+            let clickedTower = null;
+            for (let tower of data.towers) {
+              if (Math.hypot(tower.x - x, tower.y - y) < 40) { clickedTower = tower; break; }
+            }
+            if (clickedTower) {
+              setSelectedTowerInstance(clickedTower); setSelectedUnitType(null); setPendingBuild(null); setActiveSpot(null); return;
+            }
+
+            let nearestSpot = null;
+            let minSpotDist = 45;
+            for (let spot of data.buildSpots) {
+              const d = Math.hypot(spot.x - x, spot.y - y);
+              if (!spot.occupied && d < minSpotDist) { nearestSpot = spot; minSpotDist = d; }
+            }
+            if (nearestSpot) {
+                setActiveSpot(nearestSpot); setSelectedTowerInstance(null); setPendingBuild(null); setSelectedUnitType(null);
+            } else {
+                if (!clickedTower) { setSelectedTowerInstance(null); setPendingBuild(null); setActiveSpot(null); setSelectedUnitType(null); }
+            }
+          };
+
+          const handleUnitSelect = (unit, e) => {
+            if (e) e.stopPropagation();
+            if (activeSpot) { setSelectedUnitType(unit); setPendingBuild({ spot: activeSpot, unitType: unit }); }
+          };
+
+          const confirmBuild = () => {
+            if (!pendingBuild) return;
+            const { spot, unitType } = pendingBuild;
+            const data = gameData.current;
+            if (money >= unitType.cost) {
+                setMoney(m => m - unitType.cost);
+                spot.occupied = true;
+                data.towers.push({
+                    x: spot.x, y: spot.y, stats: unitType, damage: unitType.damage, range: unitType.range,
+                    fireRate: unitType.fireRate, level: 1, cooldown: 0, totalCost: unitType.cost 
+                });
+                setPendingBuild(null); setSelectedUnitType(null); setSelectedTowerInstance(null); setActiveSpot(null); 
+            }
+          };
+
+          const cancelBuild = () => { setPendingBuild(null); setActiveSpot(null); setSelectedUnitType(null); };
+          const startGame = () => {
+            setGameState('playing'); setLives(GAME_CONFIG.startLives); setMoney(GAME_CONFIG.startMoney); setWave(1);
+            setCurrentWaveConfig(generateWaveConfig(1));
+            gameData.current.towers = []; gameData.current.enemies = []; gameData.current.projectiles = [];
+            gameData.current.buildSpots.forEach(s => s.occupied = false);
+            gameData.current.waveActive = false; gameData.current.enemiesSpawnedInWave = 0;
+            setPendingBuild(null); setActiveSpot(null);
+          };
+          const handleHomeClick = () => { setShowHomeConfirm(true); };
+          const cancelHome = () => { setShowHomeConfirm(false); };
+          const returnToMenu = () => {
+            setShowHomeConfirm(false); setGameState('menu'); setWave(1);
+            gameData.current.waveActive = false; gameData.current.enemies = []; gameData.current.towers = []; gameData.current.projectiles = [];
+            gameData.current.buildSpots.forEach(s => s.occupied = false);
+            setSelectedTowerInstance(null); setActiveSpot(null); setPendingBuild(null);
+          };
+          const handleStartWave = () => {
+            if (!gameData.current.waveActive) {
+                gameData.current.waveActive = true; gameData.current.enemiesSpawnedInWave = 0;
+                gameData.current.enemiesRemainingToKill = currentWaveConfig ? currentWaveConfig.count : 0;
+            }
+          };
+          const upgradeTower = () => {
+            if (selectedTowerInstance && money >= 100) {
+                setMoney(m => m - 100);
+                selectedTowerInstance.level++; selectedTowerInstance.damage *= 1.2; selectedTowerInstance.totalCost += 100; 
+            }
+          };
+          const sellTower = () => {
+            if (selectedTowerInstance) {
+                setMoney(m => m + selectedTowerInstance.totalCost);
+                const towerIndex = gameData.current.towers.indexOf(selectedTowerInstance);
+                if (towerIndex > -1) gameData.current.towers.splice(towerIndex, 1);
+                const spot = gameData.current.buildSpots.find(s => Math.abs(s.x - selectedTowerInstance.x) < 5 && Math.abs(s.y - selectedTowerInstance.y) < 5);
+                if (spot) spot.occupied = false;
+                setSelectedTowerInstance(null);
+            }
+          };
+
+          // --- 存讀檔功能 ---
+          const generateSaveData = () => {
+              const data = {
+                  money,
+                  lives,
+                  wave,
+                  towers: gameData.current.towers.map(t => ({
+                      x: t.x, y: t.y, unitId: t.stats.id, level: t.level, damage: t.damage, totalCost: t.totalCost
+                  }))
+              };
+              try {
+                  return btoa(JSON.stringify(data));
+              } catch (e) {
+                  console.error("Save Error", e);
+                  return "";
+              }
+          };
+
+          const handleOpenSaveLoad = () => {
+              setSaveString(generateSaveData());
+              setShowSaveLoadModal(true);
+          };
+
+          const copyToClipboard = () => {
+              // 在 iframe 環境中 navigator.clipboard 可能被封鎖，改用 document.execCommand
+              const textArea = document.createElement("textarea");
+              textArea.value = saveString;
+              
+              // 確保元素在畫面外但可被選取
+              textArea.style.position = "fixed";
+              textArea.style.left = "-9999px";
+              textArea.style.top = "0";
+              document.body.appendChild(textArea);
+              
+              textArea.focus();
+              textArea.select();
+              
+              try {
+                  const successful = document.execCommand('copy');
+                  if (successful) {
+                      alert("存檔代碼已複製！");
+                  } else {
+                      alert("複製失敗，請手動選取文字並複製。");
+                  }
+              } catch (err) {
+                  console.error("Copy failed", err);
+                  alert("複製失敗，請手動選取文字並複製。");
+              }
+              
+              document.body.removeChild(textArea);
+          };
+
+          const downloadSaveFile = () => {
+              const element = document.createElement("a");
+              const file = new Blob([saveString], {type: 'text/plain'});
+              element.href = URL.createObjectURL(file);
+              element.download = "tower_defense_save.txt";
+              document.body.appendChild(element); 
+              element.click();
+              document.body.removeChild(element);
+          };
+
+          const handleLoadStringChange = (e) => {
+              setSaveString(e.target.value);
+          };
+
+          const loadGameData = (encodedData) => {
+              try {
+                  const json = atob(encodedData);
+                  const data = JSON.parse(json);
+                  
+                  if (data.money !== undefined && data.lives !== undefined && data.wave !== undefined && Array.isArray(data.towers)) {
+                      setMoney(data.money);
+                      setLives(data.lives);
+                      setWave(data.wave);
+                      
+                      gameData.current.enemies = [];
+                      gameData.current.projectiles = [];
+                      gameData.current.waveActive = false;
+                      gameData.current.buildSpots.forEach(s => s.occupied = false);
+                      
+                      const loadedTowers = [];
+                      data.towers.forEach(t => {
+                          const unitType = Object.values(UNIT_TYPES).find(u => u.id === t.unitId);
+                          if (unitType) {
+                              loadedTowers.push({
+                                  x: t.x, y: t.y, stats: unitType, damage: t.damage, range: unitType.range,
+                                  fireRate: unitType.fireRate, level: t.level, cooldown: 0, totalCost: t.totalCost
+                              });
+                              const spot = gameData.current.buildSpots.find(s => Math.abs(s.x - t.x) < 5 && Math.abs(s.y - t.y) < 5);
+                              if (spot) spot.occupied = true;
+                          }
+                      });
+                      gameData.current.towers = loadedTowers;
+                      
+                      setShowSaveLoadModal(false);
+                      setGameState('playing'); // 讀取後切換到遊戲畫面
+                      alert("讀取成功！");
+                  } else {
+                      alert("存檔格式錯誤！");
+                  }
+              } catch (e) {
+                  console.error("Load Error", e);
+                  alert("讀取失敗：無效的存檔代碼");
+              }
+          };
+
+          const handleLoadClick = () => {
+              loadGameData(saveString);
+          };
+
+          const handleFileUpload = (e) => {
+              const file = e.target.files[0];
+              if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                      const content = e.target.result;
+                      setSaveString(content); 
+                      loadGameData(content);
+                  };
+                  reader.readAsText(file);
+              }
+          };
+
+          return (
+            <div className="w-screen h-screen bg-black flex items-center justify-center overflow-hidden font-mono select-none">
+              <div style={{ width: viewport.width, height: viewport.height, position: 'relative', overflow: 'hidden', boxShadow: '0 0 50px rgba(0,0,0,0.5)' }}>
+                <div style={{ width: GAME_CONFIG.designWidth, height: GAME_CONFIG.designHeight, transform: `scale(${viewport.scale})`, transformOrigin: 'top left' }} className="relative bg-slate-900">
+                  
+                  <canvas ref={canvasRef} width={GAME_CONFIG.designWidth} height={GAME_CONFIG.designHeight} onClick={handleCanvasClick} className="absolute inset-0 z-0 cursor-crosshair active:cursor-grabbing" />
+
+                  {/* HUD Top */}
+                  <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10">
+                    {/* Left: Money */}
+                    <div className="flex flex-col gap-2 pointer-events-auto">
+                      <div className="flex items-center gap-5 bg-slate-900/80 backdrop-blur px-6 py-3 rounded-xl border-2 border-slate-700 text-yellow-400 shadow-2xl">
+                          <div className="w-5 h-5 rounded-full bg-yellow-500 animate-pulse"/>
+                          <span className="text-3xl font-black">{Math.floor(money)}</span>
+                          <span className="text-base font-bold tracking-widest text-slate-400">資金</span>
+                      </div>
+                    </div>
+
+                     {/* Center: Start Wave Button (Moved here) */}
+                     {gameState === 'playing' && !gameData.current.waveActive && (
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-auto">
+                            <button onClick={handleStartWave} className="flex items-center justify-center w-[80px] h-[80px] bg-yellow-500 hover:bg-yellow-400 text-slate-900 rounded-full shadow-lg shadow-yellow-500/20 animate-bounce transition-transform hover:scale-110 active:scale-90 border-4 border-slate-900 ring-2 ring-yellow-500">
+                                <Play size={40} fill="currentColor" className="ml-1"/>
+                            </button>
+                        </div>
+                    )}
+                    
+                    {/* Right: Wave Info & Controls */}
+                    <div className="flex flex-col items-end gap-2 pointer-events-auto relative">
+                        <div className="flex items-center gap-4">
+                            <div className="text-right bg-slate-900/80 backdrop-blur px-4 py-2 rounded-xl border border-slate-700">
+                                <div className="text-sm text-slate-400 font-bold tracking-widest">威脅等級</div>
+                                <div className="text-3xl text-white font-black tracking-tighter">波次 {wave}</div>
+                            </div>
+                            {/* Start Button Removed from here */}
+                            {gameState === 'playing' && (
+                                <div className="relative">
+                                    <button onClick={handleHomeClick} className="flex items-center justify-center w-[60px] h-[60px] bg-slate-800 hover:bg-red-500 text-slate-400 hover:text-white rounded-lg border border-slate-600 transition-colors" title="End Game">
+                                        <Home size={30}/>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        {gameState === 'playing' && (
+                            <button onClick={handleOpenSaveLoad} className="flex items-center justify-center w-[60px] h-[60px] bg-slate-800 hover:bg-blue-500 text-slate-400 hover:text-white rounded-lg border border-slate-600 transition-colors shadow-lg" title="Save / Load">
+                                <Save size={28}/>
+                            </button>
+                        )}
+                    </div>
+                  </div>
+
+                  {/* Lives Display */}
+                  {gameState === 'playing' && (
+                      <div className="absolute bottom-[240px] left-[40px] pointer-events-none z-10 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
+                          <div className="relative">
+                              <Shield size={54} className="text-blue-500/80 fill-slate-900"/>
+                              <div className="absolute inset-0 flex items-center justify-center pt-1">
+                                  <span className="text-xl font-black text-white">{lives}</span>
+                              </div>
+                          </div>
+                          <div className="text-sm font-bold text-blue-400/80 tracking-widest">核心防護</div>
+                      </div>
+                  )}
+
+                  {/* Home 2次確認遮罩 */}
+                  {showHomeConfirm && (
+                     <div className="absolute inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
+                         <div className="bg-slate-900 border-2 border-red-500/50 p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center space-y-6 scale-125">
+                             <div className="flex justify-center text-red-500 mb-2"><LogOut size={48} strokeWidth={1.5} /></div>
+                             <div className="space-y-2"><h3 className="text-2xl font-black text-white">放棄任務？</h3><p className="text-sm text-slate-400 font-mono">目前的進度將會遺失。</p></div>
+                             <div className="flex gap-4 pt-2">
+                                 <button onClick={cancelHome} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold transition-colors">取消</button>
+                                 <button onClick={returnToMenu} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold shadow-lg shadow-red-900/20 transition-colors">確認</button>
+                             </div>
+                         </div>
+                     </div>
+                  )}
+
+                  {/* 存讀檔 Modal */}
+                  {showSaveLoadModal && (
+                      <div className="absolute inset-0 bg-black/80 z-[100] flex items-center justify-center backdrop-blur-md animate-in fade-in duration-200 pointer-events-auto">
+                          <div className="bg-slate-900 border-2 border-blue-500/50 p-6 rounded-2xl shadow-2xl max-w-md w-full space-y-4">
+                              <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                                  <h3 className="text-2xl font-black text-white flex items-center gap-2"><Save size={24}/> 資料備份 / 還原</h3>
+                                  <button onClick={() => setShowSaveLoadModal(false)} className="text-slate-400 hover:text-white"><X size={24}/></button>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                  <label className="text-slate-400 text-sm font-bold flex items-center gap-2"><ArrowRight size={14}/> 匯出 (Export)</label>
+                                  <textarea 
+                                      readOnly 
+                                      value={saveString} 
+                                      className="w-full h-24 bg-slate-800 text-xs text-green-400 font-mono p-2 rounded border border-slate-700 focus:outline-none focus:border-blue-500 resize-none"
+                                      placeholder="存檔代碼將顯示於此..."
+                                  />
+                                  <div className="flex gap-2">
+                                      <button onClick={copyToClipboard} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold flex items-center justify-center gap-2 text-base"><Copy size={16}/> 複製代碼</button>
+                                      <button onClick={downloadSaveFile} className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold flex items-center justify-center gap-2 text-base"><Download size={16}/> 下載 .txt</button>
+                                  </div>
+                              </div>
+
+                              <div className="border-t border-slate-700 my-2"></div>
+
+                              <div className="space-y-2">
+                                  <label className="text-slate-400 text-sm font-bold flex items-center gap-2"><CornerDownLeft size={14}/> 匯入 (Import)</label>
+                                  <textarea 
+                                      value={saveString}
+                                      onChange={handleLoadStringChange}
+                                      className="w-full h-24 bg-slate-800 text-xs text-yellow-400 font-mono p-2 rounded border border-slate-700 focus:outline-none focus:border-blue-500 resize-none"
+                                      placeholder="請在此貼上存檔代碼..."
+                                  />
+                                  <div className="flex gap-2">
+                                       <button onClick={handleLoadClick} className="flex-1 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded font-bold flex items-center justify-center gap-2 text-base"><FileText size={16}/> 讀取代碼</button>
+                                       <button onClick={() => fileInputRef.current.click()} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold flex items-center justify-center gap-2 text-base"><FileUp size={16}/> 選擇檔案</button>
+                                       <input 
+                                          type="file" 
+                                          ref={fileInputRef} 
+                                          onChange={handleFileUpload} 
+                                          accept=".txt" 
+                                          className="hidden" 
+                                       />
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  )}
+
+                  {/* 建造確認 UI */}
+                  {pendingBuild && (
+                    <div style={{ position: 'absolute', left: pendingBuild.spot.x, top: pendingBuild.spot.y + 40, transform: 'translate(-50%, -50%)', pointerEvents: 'none', zIndex: 30, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', width: '225px', height: '280px' }}>
+                      <div className="bg-slate-900/95 border border-green-500/50 p-2 rounded-xl backdrop-blur-md shadow-2xl w-full animate-in fade-in zoom-in slide-in-from-bottom-2 mb-2">
+                         <div className="text-xl text-green-400 font-black border-b border-green-500/30 pb-1 text-center uppercase tracking-widest whitespace-nowrap leading-none mb-1">{pendingBuild.unitType.name}</div>
+                         <div className="text-base text-slate-400 text-center mb-1 leading-tight pt-0">{pendingBuild.unitType.desc}</div>
+                         <div className="space-y-1 mb-1 bg-slate-800/50 p-2 rounded-lg">
+                            <div className="flex items-center justify-between"><span className="text-slate-400 text-base font-bold">傷害</span><span className="text-white font-mono text-base font-bold">{pendingBuild.unitType.damage}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-slate-400 text-base font-bold">攻速</span><span className="text-white font-mono text-base font-bold">{getAPS(pendingBuild.unitType.fireRate)}/s</span></div>
+                            <div className="flex items-center justify-between"><span className="text-slate-400 text-base font-bold">射程</span><span className="text-white font-mono text-base font-bold">{pendingBuild.unitType.range}</span></div>
+                         </div>
+                      </div>
+                      <div className="flex gap-2 pointer-events-auto items-center justify-center w-full px-2">
+                          <button onClick={cancelBuild} className="flex-1 h-10 rounded border border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-white flex items-center justify-center transition-colors bg-slate-900/80 backdrop-blur"><X size={20} strokeWidth={2}/></button>
+                          <div className={`h-10 px-3 flex items-center justify-center rounded border bg-slate-900/80 backdrop-blur font-bold font-mono text-lg min-w-[70px] ${money >= pendingBuild.unitType.cost ? 'text-green-400 border-green-500/30' : 'text-red-500 border-red-500/30'}`}>${pendingBuild.unitType.cost}</div>
+                          <button onClick={confirmBuild} disabled={money < pendingBuild.unitType.cost} className={`flex-1 h-10 rounded border flex items-center justify-center transition-colors backdrop-blur ${money >= pendingBuild.unitType.cost ? 'border-green-500/50 text-green-400 hover:bg-green-500/20 hover:text-white bg-slate-900/80' : 'border-slate-600 text-slate-500 bg-slate-800 cursor-not-allowed'}`}><Check size={20} strokeWidth={2} /></button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 升級確認 UI */}
+                  {selectedTowerInstance && (
+                    <div style={{ position: 'absolute', left: selectedTowerInstance.x, top: selectedTowerInstance.y, transform: 'translate(-50%, -50%)', zIndex: 40, width: '240px', height: '290px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                       <div className="absolute inset-0 border-2 border-yellow-500/30 rounded-full animate-spin-slow pointer-events-none"/>
+                       <div className="absolute inset-4 border border-yellow-500/20 rounded-full animate-reverse-spin pointer-events-none"/>
+                       <div className="relative bg-slate-900/95 border border-yellow-500 p-2 rounded-xl shadow-2xl backdrop-blur-md pointer-events-auto animate-in zoom-in duration-200 w-60 flex flex-col gap-1">
+                          <button onClick={() => setSelectedTowerInstance(null)} className="absolute -top-3 -right-3 w-7 h-7 bg-slate-800 rounded-full border border-slate-600 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"><X size={16} strokeWidth={2}/></button>
+                          <div className="flex items-baseline justify-center gap-2 border-b border-slate-700 pb-1 mb-1"><div className="text-xl font-black text-white leading-none whitespace-nowrap">{selectedTowerInstance.stats.name.split(' ')[0]}</div><div className="text-base text-yellow-500 font-mono font-bold tracking-widest whitespace-nowrap">LV.{selectedTowerInstance.level}</div></div>
+                          <div className="text-base text-slate-400 text-center leading-none mb-1">{selectedTowerInstance.stats.desc}</div>
+                          <div className="grid grid-cols-3 gap-1 text-center items-center bg-slate-800/50 p-2 rounded-lg text-base">
+                             <div className="col-span-1 text-slate-400 font-bold text-left pl-1">傷害</div><div className="col-span-2 flex items-center justify-end gap-1"><span className="text-base font-black text-white">{Math.floor(selectedTowerInstance.damage)}</span><ChevronRight size={14} className="text-slate-600"/><span className="text-base font-bold text-green-400">{Math.floor(selectedTowerInstance.damage * 1.2)}</span></div>
+                             <div className="col-span-1 text-slate-400 font-bold text-left pl-1">射程</div><div className="col-span-2 text-right"><span className="text-base font-bold text-white font-mono">{Math.floor(selectedTowerInstance.range)}</span></div>
+                             <div className="col-span-1 text-slate-400 font-bold text-left pl-1">攻速</div><div className="col-span-2 text-right"><span className="text-base font-bold text-white font-mono">{getAPS(selectedTowerInstance.fireRate)}/s</span></div>
+                          </div>
+                          <div className="flex gap-2 mt-1 w-full">
+                              <button onClick={upgradeTower} disabled={money < 100} className="flex-1 py-1 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-slate-900 rounded flex flex-col items-center justify-center transition-all active:scale-95 disabled:opacity-50 disabled:grayscale shadow-lg"><span className="text-base font-black leading-tight flex items-center gap-1"><ChevronsUp size={14} strokeWidth={3}/> 升級</span><span className="text-base font-bold leading-tight">$100</span></button>
+                              <button onClick={sellTower} className="flex-1 py-1 bg-slate-800 border border-slate-600 hover:bg-red-900/80 hover:border-red-500 text-red-400 rounded flex flex-col items-center justify-center transition-all active:scale-95"><span className="text-base font-bold leading-tight flex items-center gap-1"><Trash2 size={14} strokeWidth={2}/> 販售</span><span className="text-base font-bold leading-tight">${selectedTowerInstance.totalCost}</span></button>
+                          </div>
+                       </div>
+                    </div>
+                  )}
+
+                  {/* HUD Bottom */}
+                  <div className="absolute bottom-6 left-4 right-4 flex items-end justify-between pointer-events-none z-10">
+                    {activeSpot && (
+                      <div className="flex gap-2 pointer-events-auto bg-slate-900/80 p-2 rounded-xl backdrop-blur-sm border border-slate-700/50 animate-in slide-in-from-bottom-5 fade-in duration-200 overflow-x-auto w-full">
+                        <div className="flex items-center px-2 text-xs text-slate-400 font-bold border-r border-slate-700 mr-2 shrink-0"><Users size={16} className="mr-2"/> 部署</div>
+                        {Object.values(UNIT_TYPES).map(unit => (
+                          <button key={unit.id} onClick={(e) => handleUnitSelect(unit, e)} disabled={money < unit.cost || gameState !== 'playing'} className={`relative w-16 h-20 rounded-lg border-2 transition-all duration-200 overflow-hidden group shrink-0 flex flex-col justify-end p-1 ${selectedUnitType?.id === unit.id ? 'bg-slate-800 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.3)]' : 'bg-slate-900/80 border-slate-600 hover:border-slate-400'} ${money < unit.cost ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10"/>
+                            <img src={unit.spriteUrl} alt={unit.name} className="absolute top-0 left-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity"/>
+                            {unit.effect && <div className={`absolute top-1 left-1 px-1 rounded text-[8px] font-bold text-white z-20 ${unit.effect.type === 'freeze' ? 'bg-blue-500' : unit.effect.type === 'slow' ? 'bg-purple-500' : 'bg-red-500'}`}>{unit.effect.type === 'freeze' || unit.effect.type === 'chain_freeze' ? '凍結' : unit.effect.type === 'slow' ? '緩速' : unit.effect.type === 'splash' ? '擴散' : '擊退'}</div>}
+                            <div className="relative z-20 text-center"><div className="text-[10px] text-yellow-400 font-mono font-bold leading-none mb-0.5">${unit.cost}</div><div className="text-[8px] font-bold text-white leading-tight truncate">{unit.name.split(' ')[0]}</div></div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {!activeSpot && (
+                      <div className="ml-auto bg-slate-900/80 px-4 py-2 rounded-full border border-slate-700 text-slate-400 text-xs flex items-center gap-2 backdrop-blur">
+                          {pendingBuild ? <div className="flex items-center gap-2 text-yellow-400 animate-pulse"><Crosshair size={14}/> 確認部署位置</div> : <div className="flex items-center gap-2"><AlertTriangle size={14}/> 等待指令</div>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Menu Overlay */}
+                  {gameState !== 'playing' && (
+                    <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center pointer-events-auto">
+                      <div className="w-full max-w-xl text-center space-y-12 p-12 border-y-4 border-yellow-500 bg-slate-900/50 backdrop-blur-md">
+                          <h1 className="text-8xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-yellow-300 via-yellow-500 to-yellow-700 drop-shadow-2xl">{gameState === 'menu' ? '塔防大作戰' : gameState === 'won' ? '任務完成' : '任務失敗'}</h1>
+                          <p className="text-xl text-slate-400 font-mono tracking-widest uppercase">{gameState === 'menu' ? '戰術模擬開始' : gameState === 'won' ? '地表奪還成功' : '信號中斷'}</p>
+                          <div className="pt-8 flex flex-col gap-4">
+                            {gameState === 'failed' || gameState === 'lost' || gameState === 'won' ? (
+                                <button onClick={returnToMenu} className="group relative px-12 py-6 bg-yellow-500 hover:bg-white text-slate-900 font-black text-3xl skew-x-[-10deg] transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_-10px_rgba(234,179,8,0.6)] w-full">
+                                  <span className="block skew-x-[10deg] flex items-center justify-center gap-6"><LogOut size={32}/> 返回主選單</span>
+                                  <div className="absolute inset-0 border-2 border-white opacity-0 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300 skew-x-[10deg]"/>
+                                </button>
+                            ) : (
+                                <>
+                                    <button onClick={startGame} className="group relative px-12 py-6 bg-yellow-500 hover:bg-white text-slate-900 font-black text-3xl skew-x-[-10deg] transition-all hover:scale-105 active:scale-95 shadow-[0_0_40px_-10px_rgba(234,179,8,0.6)] w-full">
+                                        <span className="block skew-x-[10deg] flex items-center justify-center gap-6"><Play size={32} fill="currentColor"/> 出擊</span>
+                                        <div className="absolute inset-0 border-2 border-white opacity-0 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300 skew-x-[10deg]"/>
+                                    </button>
+                                    <button onClick={handleOpenSaveLoad} className="group relative px-12 py-4 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold text-xl skew-x-[-10deg] transition-all hover:scale-105 active:scale-95 w-full">
+                                        <span className="block skew-x-[10deg] flex items-center justify-center gap-4"><FileText size={24}/> 讀取進度</span>
+                                    </button>
+                                </>
+                            )}
+                          </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<TowerDefenseGame />);
+    </script>
+</body>
+</html>
